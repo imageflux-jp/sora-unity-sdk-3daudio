@@ -62,6 +62,7 @@ set_target_properties(SoraUnitySdk PROPERTIES CXX_STANDARD 17 C_STANDARD 99)
 target_sources(SoraUnitySdk
   PRIVATE
     src/device_list.cpp
+    src/dummy_audio_device.cpp
     src/id_pointer.cpp
     src/sora.cpp
     src/unity_camera_capturer.cpp

@@ -133,6 +133,9 @@ public class Sora : IDisposable
     GCHandle onDataChannelHandle;
     GCHandle onHandleAudioHandle;
     GCHandle onCapturerFrameHandle;
+    GCHandle onAddAudioTrackHandle;
+    GCHandle onRemoveAudioTrackHandle;
+    GCHandle onHandleAudioTrackHandle;
     UnityEngine.Rendering.CommandBuffer commandBuffer;
     UnityEngine.Camera unityCamera;
 
@@ -187,6 +190,21 @@ public class Sora : IDisposable
         if (onCapturerFrameHandle.IsAllocated)
         {
             onCapturerFrameHandle.Free();
+        }
+
+        if (onAddAudioTrackHandle.IsAllocated)
+        {
+            onAddAudioTrackHandle.Free();
+        }
+
+        if (onRemoveAudioTrackHandle.IsAllocated)
+        {
+            onRemoveAudioTrackHandle.Free();
+        }
+
+        if (onHandleAudioTrackHandle.IsAllocated)
+        {
+            onHandleAudioTrackHandle.Free();
         }
     }
 
@@ -706,4 +724,73 @@ public class Sora : IDisposable
     private static extern int sora_device_enum_audio_playout(DeviceEnumCallbackDelegate f, IntPtr userdata);
     [DllImport(DllName)]
     private static extern int sora_is_h264_supported();
+
+    [DllImport(DllName)]
+    private static extern void sora_set_on_add_audio_track(IntPtr p, AudioTrackCallbackDelegate on_add_track, IntPtr userdata);
+    [DllImport(DllName)]
+    private static extern void sora_set_on_remove_audio_track(IntPtr p, AudioTrackCallbackDelegate on_remove_track, IntPtr userdata);
+    [DllImport(DllName)]
+    private static extern void sora_set_on_handle_audio_track(IntPtr p, HandleAudioTrackCallbackDelegate on_handle_audio, IntPtr userdata);
+
+    private delegate void AudioTrackCallbackDelegate(string track_id, string connection_id, IntPtr userdata);
+
+    [AOT.MonoPInvokeCallback(typeof(AudioTrackCallbackDelegate))]
+    static private void AudioTrackCallback(string trackId, string connectionId, IntPtr userdata)
+    {
+        var callback = GCHandle.FromIntPtr(userdata).Target as Action<string, string>;
+        callback(trackId, connectionId);
+    }
+
+    public Action<string, string> OnAddAudioTrack
+    {
+        set
+        {
+            if (onAddAudioTrackHandle.IsAllocated)
+            {
+                onAddAudioTrackHandle.Free();
+            }
+
+            onAddAudioTrackHandle = GCHandle.Alloc(value);
+            sora_set_on_add_audio_track(p, AudioTrackCallback, GCHandle.ToIntPtr(onAddAudioTrackHandle));
+        }
+    }
+    public Action<string, string> OnRemoveAudioTrack
+    {
+        set
+        {
+            if (onRemoveAudioTrackHandle.IsAllocated)
+            {
+                onRemoveAudioTrackHandle.Free();
+            }
+
+            onRemoveAudioTrackHandle = GCHandle.Alloc(value);
+            sora_set_on_remove_audio_track(p, AudioTrackCallback, GCHandle.ToIntPtr(onRemoveAudioTrackHandle));
+        }
+    }
+
+    private delegate void HandleAudioTrackCallbackDelegate(IntPtr buf, int samples, int channels, string audio_track_id, IntPtr userdata);
+
+    [AOT.MonoPInvokeCallback(typeof(HandleAudioTrackCallbackDelegate))]
+    static private void HandleAudioTrackCallback(IntPtr buf, int samples, int channels, string audio_track_id, IntPtr userdata)
+    {
+        var callback = GCHandle.FromIntPtr(userdata).Target as Action<short[], int, int, string>;
+        short[] buf2 = new short[samples * channels];
+        Marshal.Copy(buf, buf2, 0, samples * channels);
+        callback(buf2, samples, channels, audio_track_id);
+    }
+
+    public Action<short[], int, int, string> OnHandleAudioTrack
+    {
+        set
+        {
+            if (onHandleAudioTrackHandle.IsAllocated)
+            {
+                onHandleAudioTrackHandle.Free();
+            }
+
+            onHandleAudioTrackHandle = GCHandle.Alloc(value);
+            sora_set_on_handle_audio_track(p, HandleAudioTrackCallback, GCHandle.ToIntPtr(onHandleAudioTrackHandle));
+        }
+    }
+
 }

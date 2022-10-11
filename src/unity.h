@@ -94,6 +94,28 @@ UNITY_INTERFACE_EXPORT unity_bool_t
 sora_device_enum_audio_playout(device_enum_cb_t f, void* userdata);
 UNITY_INTERFACE_EXPORT unity_bool_t sora_is_h264_supported();
 
+typedef void (*audio_track_cb_t)(const char* track_id,
+                                 const char* connection_id,
+                                 void* userdata);
+UNITY_INTERFACE_EXPORT void sora_set_on_add_audio_track(
+    void* p,
+    audio_track_cb_t on_add_audio_track,
+    void* userdata);
+UNITY_INTERFACE_EXPORT void sora_set_on_remove_audio_track(
+    void* p,
+    audio_track_cb_t on_remove_audio_track,
+    void* userdata);
+
+typedef void (*handle_audio_track_cb_t)(const int16_t* buf,
+                                        int samples,
+                                        int channels,
+                                        const char* audio_track_id,
+                                        void* userdata);
+UNITY_INTERFACE_EXPORT void sora_set_on_handle_audio_track(
+    void* p,
+    handle_audio_track_cb_t f,
+    void* userdata);
+
 #ifdef __cplusplus
 }
 #endif

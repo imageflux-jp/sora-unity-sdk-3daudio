@@ -232,4 +232,37 @@ UnityPluginUnload()
 {
   sora_unity_sdk::UnityContext::Instance().Shutdown();
 }
+
+void sora_set_on_add_audio_track(void* p,
+                                 audio_track_cb_t on_add_audio_track,
+                                 void* userdata) {
+  auto wsora = (SoraWrapper*)p;
+  wsora->sora->SetOnAddAudioTrack(
+      [on_add_audio_track, userdata](std::string track_id,
+                                     std::string connection_id) {
+        on_add_audio_track(track_id.c_str(), connection_id.c_str(), userdata);
+      });
+}
+
+void sora_set_on_remove_audio_track(void* p,
+                                    audio_track_cb_t on_remove_audio_track,
+                                    void* userdata) {
+  auto wsora = (SoraWrapper*)p;
+  wsora->sora->SetOnRemoveAudioTrack([on_remove_audio_track, userdata](
+                                         std::string track_id,
+                                         std::string connection_id) {
+    on_remove_audio_track(track_id.c_str(), connection_id.c_str(), userdata);
+  });
+}
+
+void sora_set_on_handle_audio_track(void* p,
+                                    handle_audio_track_cb_t f,
+                                    void* userdata) {
+  auto wsora = (SoraWrapper*)p;
+  wsora->sora->SetOnHandleAudioTrack([f, userdata](const int16_t* buf,
+                                                   int samples, int channels,
+                                                   std::string audio_track_id) {
+    f(buf, samples, channels, audio_track_id.c_str(), userdata);
+  });
+}
 }

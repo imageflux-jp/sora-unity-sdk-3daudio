@@ -26,6 +26,7 @@
 #include "unity_camera_capturer.h"
 #include "unity_context.h"
 #include "unity_renderer.h"
+#include "dummy_audio_device.h"
 
 #ifdef SORA_UNITY_SDK_ANDROID
 #include <sdk/android/native_api/jni/scoped_java_ref.h>
@@ -167,6 +168,31 @@ class Sora : public std::enable_shared_from_this<Sora>,
 #if defined(SORA_UNITY_SDK_ANDROID)
   webrtc::ScopedJavaGlobalRef<jobject> android_context_;
 #endif
+
+ public:
+  void SetOnAddAudioTrack(
+      std::function<void(std::string, std::string)> on_add_track);
+  void SetOnRemoveAudioTrack(
+      std::function<void(std::string, std::string)> on_remove_track);
+  void SetOnHandleAudioTrack(
+      std::function<void(const int16_t*, int, int, std::string)> f);
+
+ private:
+  rtc::scoped_refptr<DummyAudioDevice> dummy_adm_;
+  std::function<void(std::string, std::string)> on_add_audio_track_;
+  std::function<void(std::string, std::string)> on_remove_audio_track_;
+  std::function<void(const int16_t*, int, int, std::string)>
+      on_handle_audio_track_;
+  std::map<std::string, std::string> audio_connection_ids_;
+  std::map<std::string, webrtc::AudioTrackSinkInterface*> audio_sinks_;
+
+  void OnAddAudioTrack(
+      rtc::scoped_refptr<webrtc::RtpTransceiverInterface> transceiver);
+  void OnRemoveAudioTrack(
+      rtc::scoped_refptr<webrtc::RtpReceiverInterface> receiver);
+  static rtc::scoped_refptr<DummyAudioDevice> Sora::CreateDummyAudioDevice(
+      webrtc::TaskQueueFactory* task_queue_factory,
+      rtc::Thread* worker_thread);
 };
 
 }  // namespace sora_unity_sdk

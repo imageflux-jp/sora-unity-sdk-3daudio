@@ -63,6 +63,7 @@ Sora::~Sora() {
   capturer_sink_ = nullptr;
   capturer_ = nullptr;
   unity_adm_ = nullptr;
+  dummy_adm_ = nullptr;
 
   audio_track_ = nullptr;
   video_track_ = nullptr;
@@ -228,12 +229,17 @@ void Sora::DoConnect(const sora_conf::internal::ConnectConfig& cc,
   // media_dependencies
   cricket::MediaEngineDependencies media_dependencies;
   media_dependencies.task_queue_factory = dependencies.task_queue_factory.get();
+  dummy_adm_ = CreateDummyAudioDevice(media_dependencies.task_queue_factory,
+                                      worker_thread_.get());
+  media_dependencies.adm = dummy_adm_;
+#if 0
   unity_adm_ =
       CreateADM(media_dependencies.task_queue_factory, false,
                 cc.unity_audio_input, cc.unity_audio_output, on_handle_audio_,
                 cc.audio_recording_device, cc.audio_playout_device,
                 worker_thread_.get(), worker_env, worker_context);
   media_dependencies.adm = unity_adm_;
+#endif
 
 #if defined(SORA_UNITY_SDK_ANDROID)
   worker_thread_->Invoke<void>(RTC_FROM_HERE, [worker_env, worker_context] {
@@ -285,12 +291,14 @@ void Sora::DoConnect(const sora_conf::internal::ConnectConfig& cc,
   factory_options.crypto_options.srtp.enable_gcm_crypto_suites = true;
   factory_->SetOptions(factory_options);
 
+#if 0
   if (!InitADM(unity_adm_, cc.audio_recording_device,
                cc.audio_playout_device)) {
     on_disconnect((int)sora_conf::ErrorCode::INTERNAL_ERROR,
                   "Failed to InitADM");
     return;
   }
+#endif
 
   renderer_.reset(new UnityRenderer());
 
@@ -491,6 +499,7 @@ void Sora::SetOnHandleAudio(std::function<void(const int16_t*, int, int)> f) {
   on_handle_audio_ = f;
 }
 
+#if 0
 rtc::scoped_refptr<UnityAudioDevice> Sora::CreateADM(
     webrtc::TaskQueueFactory* task_queue_factory,
     bool dummy_audio,
@@ -608,6 +617,7 @@ bool Sora::InitADM(rtc::scoped_refptr<webrtc::AudioDeviceModule> adm,
 
   return true;
 }
+#endif
 
 rtc::scoped_refptr<webrtc::VideoTrackSourceInterface> Sora::CreateVideoCapturer(
     int capturer_type,
@@ -771,6 +781,7 @@ void Sora::OnTrack(
       }
     });
   }
+  OnAddAudioTrack(transceiver);
 }
 void Sora::OnRemoveTrack(
     rtc::scoped_refptr<webrtc::RtpReceiverInterface> receiver) {
@@ -789,6 +800,7 @@ void Sora::OnRemoveTrack(
       });
     }
   }
+  OnRemoveAudioTrack(receiver);
 }
 
 void Sora::OnDataChannel(std::string label) {
@@ -802,6 +814,96 @@ void Sora::OnDataChannel(std::string label) {
 void Sora::PushEvent(std::function<void()> f) {
   std::lock_guard<std::mutex> guard(event_mutex_);
   event_queue_.push_back(std::move(f));
+}
+
+void Sora::SetOnAddAudioTrack(
+    std::function<void(std::string, std::string)> on_add_track) {
+  on_add_audio_track_ = on_add_track;
+}
+void Sora::SetOnRemoveAudioTrack(
+    std::function<void(std::string, std::string)> on_remove_track) {
+  on_remove_audio_track_ = on_remove_track;
+}
+
+void Sora::SetOnHandleAudioTrack(
+    std::function<void(const int16_t*, int, int, std::string)> f) {
+  on_handle_audio_track_ = f;
+}
+
+class RTC_EXPORT UnityAudioTrackSinkInterface
+    : public webrtc::AudioTrackSinkInterface {
+ public:
+  UnityAudioTrackSinkInterface(
+      std::string track_id,
+      std::function<void(const int16_t*, int, int, std::string)>
+          on_handle_audio_track)
+      : track_id_(track_id), on_handle_audio_track_(on_handle_audio_track) {}
+
+  virtual void OnData(const void* audio_data,
+                      int bits_per_sample,
+                      int sample_rate,
+                      size_t number_of_channels,
+                      size_t number_of_frames) {
+    on_handle_audio_track_((const int16_t*)audio_data, number_of_frames,
+                           number_of_channels, track_id_);
+  }
+
+ private:
+  std::string track_id_;
+  std::function<void(const int16_t*, int, int, std::string)>
+      on_handle_audio_track_;
+};
+
+void Sora::OnAddAudioTrack(
+    rtc::scoped_refptr<webrtc::RtpTransceiverInterface> transceiver) {
+  auto track = transceiver->receiver()->track();
+  if (track->kind() == webrtc::MediaStreamTrackInterface::kAudioKind) {
+    auto connection_id = transceiver->receiver()->stream_ids()[0];
+    auto audio_track = static_cast<webrtc::AudioTrackInterface*>(track.get());
+    auto track_id = audio_track->id();
+    audio_connection_ids_.insert(std::make_pair(track_id, connection_id));
+    PushEvent([this, track_id, connection_id]() {
+      if (on_add_audio_track_) {
+        on_add_audio_track_(track_id, connection_id);
+      }
+    });
+    if (on_handle_audio_track_) {
+      auto audio_sink =
+          new UnityAudioTrackSinkInterface(track_id, on_handle_audio_track_);
+      audio_track->AddSink(audio_sink);
+      audio_sinks_.insert(std::make_pair(track_id, audio_sink));
+    }
+  }
+}
+
+void Sora::OnRemoveAudioTrack(
+    rtc::scoped_refptr<webrtc::RtpReceiverInterface> receiver) {
+  auto track = receiver->track();
+  if (track->kind() == webrtc::MediaStreamTrackInterface::kAudioKind) {
+    auto audio_track = static_cast<webrtc::AudioTrackInterface*>(track.get());
+    auto track_id = audio_track->id();
+    auto audio_sink = audio_sinks_[track_id];
+    audio_track->RemoveSink(audio_sink);
+    audio_sinks_.erase(track_id);
+    auto connection_id = audio_connection_ids_[track_id];
+    audio_connection_ids_.erase(track_id);
+    if (!track_id.empty()) {
+      PushEvent([this, track_id, connection_id]() {
+        if (on_remove_audio_track_) {
+          on_remove_audio_track_(track_id, connection_id);
+        }
+      });
+    }
+  }
+}
+
+rtc::scoped_refptr<DummyAudioDevice> Sora::CreateDummyAudioDevice(
+    webrtc::TaskQueueFactory* task_queue_factory,
+    rtc::Thread* worker_thread) {
+  return worker_thread->Invoke<rtc::scoped_refptr<DummyAudioDevice>>(
+      RTC_FROM_HERE, [&]() {
+        return rtc::make_ref_counted<DummyAudioDevice>(task_queue_factory);
+      });
 }
 
 }  // namespace sora_unity_sdk
