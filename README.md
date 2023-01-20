@@ -1,5 +1,7 @@
 # Sora Unity SDK 3D audio サンプル
 
+[![GitHub tag (latest SemVer)](https://img.shields.io/github/tag/imageflux-jp/sora-unity-sdk-3daudio.svg)](https://github.com/imageflux-jp/sora-unity-sdk-3daudio)
+
 ## デモムービー
 
 https://user-images.githubusercontent.com/59855953/195092231-dba39773-72d3-4c9e-8511-bf72a2847a64.mp4
